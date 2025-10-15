@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D&Dシート → ココフォリア駒JSON生成 (Cloudflare対応)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 20px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 800px; margin: auto; padding: 30px; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        h1 { color: #d81b60; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px; margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; }
+        input[type="url"] { width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
+        textarea { width: 100%; height: 250px; padding: 15px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: monospace; font-size: 14px; background-color: #f9f9f9; resize: vertical; }
+        button { background-color: #039be5; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        button:hover { background-color: #0277bd; }
+        .error { color: #d32f2f; background-color: #ffebee; border: 1px solid #ef9a9a; padding: 10px; border-radius: 4px; margin-bottom: 20px; display: none; }
+        .success { background-color: #e8f5e9; border: 1px solid #81c784; color: #388e3c; padding: 10px; border-radius: 4px; margin-bottom: 20px; display: none; }
+        .copy-button { background-color: #4CAF50; margin-left: 10px; }
+        .copy-button:hover { background-color: #45a049; }
+        .action-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>✨ D&Dシート → ココフォリア駒JSON生成 (URL対応)</h1>
+    <p>Cloudflare Workersをプロキシとして利用し、外部のキャラクターシートURLからデータを取得します。</p>
+
+    <label for="sheet_url">キャラクターシートのURL:</label>
+    <input type="url" id="sheet_url" placeholder="例: https://example.com/sheet.php?ID=54488" required>
+    
+    <div id="status-message" class="error"></div>
+    
+    <button id="generateButton" onclick="fetchSheetAndGenerateJson()">駒JSONを生成</button>
+
+    <div id="result-area" style="margin-top: 30px;">
+        <h2>🎉 生成されたココフォリア駒JSON</h2>
+        <div class="action-row">
+            <p id="summary-name" style="font-weight: bold;"></p>
+            <button class="copy-button" id="copyButton" type="button" onclick="copyJson()">JSONをコピー</button>
+        </div>
+        <textarea id="jsonOutput" readonly></textarea>
+        <div id="summary-area" style="margin-top: 10px; padding: 15px; background-color: #e9ecef; border-radius: 4px;">
+            <h3>抽出結果サマリー</h3>
+            <p id="summary-stats"></p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 🚨 ここをCloudflare Worker/Functionのエンドポイントに置き換えてください
+    // 例: https://yourdomain.com/api/fetch-sheet
+    const WORKER_ENDPOINT = 'https://dnd-pawn-scraper.tororo4096.workers.dev/'; 
+
+    /**
+     * D&DキャラクターシートのHTML内容から必要なデータを解析します。
+     * @param {string} htmlContent - Workerから取得した生のHTMLコンテンツ
+     * @returns {object|null} 抽出されたステータスデータ
+     */
+    function parseDnDSheet(htmlContent) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, 'text/html');
+        
+        const extractText = (selector, fallback = '0') => {
+            const element = doc.querySelector(selector);
+            let text = element ? element.textContent.trim() : '';
+            return text.replace(/　/g, '').replace(/[\n\r]/g, '');
+        };
+
+        try {
+            // セレクタは添付ファイル (OUTPUT.php.txt) の構造を基に構築
+            // キャラクター名:
+            const name = extractText('table.DD5ePage tr:nth-child(2) td:nth-child(2) div.B b', '無名キャラクター');
+            
+            // AC:
+            [cite_start]const acText = extractText('table[summary="ＡＣ"] tr.LWC td:nth-child(1) div.A b'); [cite: 18]
+            const ac = parseInt(acText) || 10;
+
+            // イニシアチブ:
+            [cite_start]const initText = extractText('table[summary="イニシアチブ"] tr.LWC td:nth-child(1) div.A b'); [cite: 18]
+            const initiative = parseInt(initText) || 0;
+
+            // 習熟ボーナス (PB):
+            [cite_start]const pbText = extractText('table.DD5ePage[summary="3列目"] table[width="340"] tr.MWC td:nth-child(4) div.A b'); [cite: 20]
+            const pb = parseInt(pbText) || 2;
+
+            // 最大HP:
+            // ヒットポイントテーブル内の、最大HPの表示欄 (通常は空欄の場合があるため、PHPのテンプレート構造で確認)
+            // 🚨 テンプレートのHP欄は空欄の場合があるため、パース失敗時のデフォルト値を設定
+            // 構造: table[summary:なし] > tr > td.LBC:nth-child(1) div.A b
+            const hpTable = doc.querySelector('table[summary]:last-of-type');
+            const hpMaxElement = hpTable ? hpTable.querySelector('tr:nth-child(6) td.LBC:nth-child(1) div.A b') : null;
+            const hpMax = parseInt(hpMaxElement ? hpMaxElement.textContent.trim() : '') || 1; 
+
+            // HP現在値:
+            const hpCurrentElement = hpTable ? hpTable.querySelector('tr:nth-child(6) td.LBC:nth-child(2) div.A b') : null;
+            const hpCurrent = parseInt(hpCurrentElement ? hpCurrentElement.textContent.trim() : '') || hpMax;
+
+            if (name === '無名キャラクター' && ac === 10) {
+                 throw new Error("データ抽出に失敗しました。URLが正しいか、ページ構造が変わっていないか確認してください。");
+            }
+
+
+            return { name, ac, initiative, hp_max: hpMax, hp_current: hpCurrent, pb };
+
+        } catch (e) {
+            console.error("解析エラー:", e);
+            throw new Error(`HTMLの解析中にエラーが発生しました: ${e.message}`);
+        }
+    }
+
+    function generateKokoforiaJsonData(data) {
+        const { name, initiative, hp_current, hp_max, ac, pb } = data;
+
+        const kokoforiaData = {
+            kind: 'character',
+            data: {
+                name: name,
+                init: initiative,
+                memo: `D&Dキャラクターシートから自動生成\n\nAC: ${ac}\n習熟ボーナス: +${pb}`,
+                secret: false,
+                invisible: false,
+                hideStatus: false,
+                image: null,
+                status: [
+                    { label: 'HP', value: hp_current, max: hp_max },
+                    { label: 'AC', value: ac, max: ac },
+                ],
+                chatPalette: 
+                    "// --- D&D5E ロールパレット ---\n" +
+                    `1d20+${initiative} 【イニシアチブ】\n` +
+                    `1d20+${pb} 【習熟判定 (PB)】\n` +
+                    "1d20+?{能力修正|0} 【能力値判定】\n" +
+                    "1d20+?{技能修正|0} 【技能判定】\n" +
+                    "// ---- 攻撃例 ----\n" +
+                    "1d20+?{攻撃修正|0} 【攻撃ロール】\n" +
+                    "?{ダメージダイス|1d6}+?{ダメージ修正|0} 【ダメージ】\n",
+            }
+        };
+
+        return JSON.stringify(kokoforiaData, null, 2);
+    }
+    
+    async function fetchSheetAndGenerateJson() {
+        const sheetUrl = document.getElementById('sheet_url').value;
+        const statusMessage = document.getElementById('status-message');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const generateButton = document.getElementById('generateButton');
+        
+        statusMessage.style.display = 'none';
+        jsonOutput.value = '';
+        generateButton.disabled = true;
+        generateButton.textContent = '処理中...';
+
+        if (!sheetUrl.startsWith('http')) {
+            setStatus('エラー: 有効なURLを入力してください。', true);
+            generateButton.disabled = false;
+            generateButton.textContent = '駒JSONを生成';
+            return;
+        }
+        
+        try {
+            // 1. Workerを呼び出し、外部ページのHTMLコンテンツを取得
+            const workerUrl = `${WORKER_ENDPOINT}?url=${encodeURIComponent(sheetUrl)}`;
+            const response = await fetch(workerUrl);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Workerからの応答エラー: ${response.status} (${errorText.substring(0, 100)}...)`);
+            }
+
+            const htmlContent = await response.text();
+
+            // 2. 取得したHTMLを解析し、データを抽出
+            const data = parseDnDSheet(htmlContent);
+
+            // 3. JSONを生成し、表示
+            const json = generateKokoforiaJsonData(data);
+            jsonOutput.value = json;
+            
+            // 4. サマリー表示
+            document.getElementById('summary-name').textContent = `キャラクター名: ${data.name}`;
+            document.getElementById('summary-stats').innerHTML = 
+                `イニシアチブ: ${data.initiative} / AC: ${data.ac} / HP (現在/最大): ${data.hp_current} / ${data.hp_max} / PB: +${data.pb}`;
+
+            setStatus('✅ 駒JSONが正常に生成されました。', false);
+
+        } catch (e) {
+            console.error(e);
+            setStatus(`エラー: ${e.message}`, true);
+        } finally {
+            generateButton.disabled = false;
+            generateButton.textContent = '駒JSONを生成';
+        }
+    }
+
+    function setStatus(message, isError) {
+        const statusMessage = document.getElementById('status-message');
+        statusMessage.textContent = message;
+        statusMessage.className = isError ? 'error' : 'success';
+        statusMessage.style.display = 'block';
+    }
+
+    function copyJson() {
+        const jsonOutput = document.getElementById('jsonOutput');
+        const copyButton = document.getElementById('copyButton');
+        
+        jsonOutput.select();
+        jsonOutput.setSelectionRange(0, 99999);
+        
+        let success = false;
+        try {
+            success = document.execCommand('copy');
+        } catch (err) {
+            console.error('コピーに失敗しました', err);
+        }
+
+        if (success) {
+            copyButton.textContent = '✅ コピー完了！';
+        } else {
+            copyButton.textContent = '❌ コピー失敗';
+        }
+
+        setTimeout(() => {
+            copyButton.textContent = 'JSONをコピー';
+        }, 3000);
+    }
+</script>
+
+</body>
+</html>
