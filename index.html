@@ -49,14 +49,12 @@
 
 <script>
     // 🚨 ここをCloudflare Worker/Functionのエンドポイントに置き換えてください
-    const WORKER_ENDPOINT = 'https://dnd-pawn-scraper.tororo4096.workers.dev/'; 
+    const WORKER_ENDPOINT = '/api/fetch-sheet'; 
 
     /**
      * D&DキャラクターシートのHTML内容から必要なデータを解析します。
-     * ... (parseDnDSheet関数の中身は変更なし) ...
      */
     function parseDnDSheet(htmlContent) {
-        // ... (前の回答で提供した内容と同一) ...
         const parser = new DOMParser();
         const doc = parser.parseFromString(htmlContent, 'text/html');
         
@@ -100,10 +98,8 @@
 
     /**
      * 抽出したデータからココフォリアJSONを生成します。
-     * ... (generateKokoforiaJsonData関数の中身は変更なし) ...
      */
     function generateKokoforiaJsonData(data) {
-        // ... (前の回答で提供した内容と同一) ...
         const { name, initiative, hp_current, hp_max, ac, pb } = data;
 
         const kokoforiaData = {
@@ -135,7 +131,7 @@
         return JSON.stringify(kokoforiaData, null, 2);
     }
     
-    // 🚨 この関数がボタンから呼ばれるメイン処理です
+    // ⭐️ 修正点 1: ReferenceError対策として、関数をグローバルに定義
     async function fetchSheetAndGenerateJson() {
         const sheetUrl = document.getElementById('sheet_url').value;
         const statusMessage = document.getElementById('status-message');
@@ -164,16 +160,14 @@
                 throw new Error(`Workerからの応答エラー: ${response.status} (${errorText.substring(0, 100)}...)`);
             }
 
-            // 🚨 修正点 1: レスポンスをArrayBuffer（バイナリデータ）として受け取る
+            // 🚨 修正点 2: Workerから受け取ったレスポンスをArrayBuffer（バイトデータ）として受け取る
             const buffer = await response.arrayBuffer();
             
-            // 🚨 修正点 2: Shift_JISからUTF-8へデコード
-            // TextDecoderはShift_JIS（またはその別名 Shift-JIS）に対応しています
+            // 🚨 修正点 3 (文字化け対策): Shift_JISからUTF-8へデコード
             const decoder = new TextDecoder('Shift_JIS'); 
             const htmlContent = decoder.decode(buffer);
 
             // 2. 取得したHTMLを解析し、データを抽出
-            // ここから先は、UTF-8にデコードされたHTMLコンテンツを処理するため、変更不要です。
             const data = parseDnDSheet(htmlContent);
 
             // 3. JSONを生成し、表示
@@ -203,7 +197,6 @@
         statusMessage.style.display = 'block';
     }
 
-    // 🚨 コピー関数はそのまま
     function copyJson() {
         const jsonOutput = document.getElementById('jsonOutput');
         const copyButton = document.getElementById('copyButton');
@@ -229,10 +222,9 @@
         }, 3000);
     }
     
-    // ⭐️ 修正点: DOMContentLoadedでイベントリスナーを設定
+    // ⭐️ 修正点 3: DOMContentLoadedでイベントリスナーを設定し、ReferenceErrorを回避
     document.addEventListener('DOMContentLoaded', () => {
         const generateButton = document.getElementById('generateButton');
-        // ボタンがクリックされたら fetchSheetAndGenerateJson 関数を実行する
         if (generateButton) {
             generateButton.addEventListener('click', fetchSheetAndGenerateJson);
         }
