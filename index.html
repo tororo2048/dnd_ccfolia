@@ -155,7 +155,7 @@
         }
         
         try {
-            // 1. Workerを呼び出し、外部ページのHTMLコンテンツを取得
+            // 1. Workerを呼び出し、外部ページの生のコンテンツ（ArrayBuffer）を取得
             const workerUrl = `${WORKER_ENDPOINT}?url=${encodeURIComponent(sheetUrl)}`;
             const response = await fetch(workerUrl);
             
@@ -164,9 +164,16 @@
                 throw new Error(`Workerからの応答エラー: ${response.status} (${errorText.substring(0, 100)}...)`);
             }
 
-            const htmlContent = await response.text();
+            // 🚨 修正点 1: レスポンスをArrayBuffer（バイナリデータ）として受け取る
+            const buffer = await response.arrayBuffer();
+            
+            // 🚨 修正点 2: Shift_JISからUTF-8へデコード
+            // TextDecoderはShift_JIS（またはその別名 Shift-JIS）に対応しています
+            const decoder = new TextDecoder('Shift_JIS'); 
+            const htmlContent = decoder.decode(buffer);
 
             // 2. 取得したHTMLを解析し、データを抽出
+            // ここから先は、UTF-8にデコードされたHTMLコンテンツを処理するため、変更不要です。
             const data = parseDnDSheet(htmlContent);
 
             // 3. JSONを生成し、表示
