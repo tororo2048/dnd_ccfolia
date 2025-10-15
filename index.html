@@ -31,7 +31,7 @@
     
     <div id="status-message" class="error"></div>
     
-    <button id="generateButton" onclick="fetchSheetAndGenerateJson()">駒JSONを生成</button>
+    <button id="generateButton">駒JSONを生成</button>
 
     <div id="result-area" style="margin-top: 30px;">
         <h2>🎉 生成されたココフォリア駒JSON</h2>
@@ -49,15 +49,14 @@
 
 <script>
     // 🚨 ここをCloudflare Worker/Functionのエンドポイントに置き換えてください
-    // 例: https://yourdomain.com/api/fetch-sheet
-    const WORKER_ENDPOINT = 'https://dnd-pawn-scraper.tororo4096.workers.dev/'; 
+    const WORKER_ENDPOINT = '/api/fetch-sheet'; 
 
     /**
      * D&DキャラクターシートのHTML内容から必要なデータを解析します。
-     * @param {string} htmlContent - Workerから取得した生のHTMLコンテンツ
-     * @returns {object|null} 抽出されたステータスデータ
+     * ... (parseDnDSheet関数の中身は変更なし) ...
      */
     function parseDnDSheet(htmlContent) {
+        // ... (前の回答で提供した内容と同一) ...
         const parser = new DOMParser();
         const doc = parser.parseFromString(htmlContent, 'text/html');
         
@@ -69,37 +68,27 @@
 
         try {
             // セレクタは添付ファイル (OUTPUT.php.txt) の構造を基に構築
-            // キャラクター名:
             const name = extractText('table.DD5ePage tr:nth-child(2) td:nth-child(2) div.B b', '無名キャラクター');
             
-            // AC:
-            [cite_start]const acText = extractText('table[summary="ＡＣ"] tr.LWC td:nth-child(1) div.A b'); [cite: 18]
+            const acText = extractText('table[summary="ＡＣ"] tr.LWC td:nth-child(1) div.A b');
             const ac = parseInt(acText) || 10;
 
-            // イニシアチブ:
-            [cite_start]const initText = extractText('table[summary="イニシアチブ"] tr.LWC td:nth-child(1) div.A b'); [cite: 18]
+            const initText = extractText('table[summary="イニシアチブ"] tr.LWC td:nth-child(1) div.A b');
             const initiative = parseInt(initText) || 0;
 
-            // 習熟ボーナス (PB):
-            [cite_start]const pbText = extractText('table.DD5ePage[summary="3列目"] table[width="340"] tr.MWC td:nth-child(4) div.A b'); [cite: 20]
+            const pbText = extractText('table.DD5ePage[summary="3列目"] table[width="340"] tr.MWC td:nth-child(4) div.A b');
             const pb = parseInt(pbText) || 2;
 
-            // 最大HP:
-            // ヒットポイントテーブル内の、最大HPの表示欄 (通常は空欄の場合があるため、PHPのテンプレート構造で確認)
-            // 🚨 テンプレートのHP欄は空欄の場合があるため、パース失敗時のデフォルト値を設定
-            // 構造: table[summary:なし] > tr > td.LBC:nth-child(1) div.A b
             const hpTable = doc.querySelector('table[summary]:last-of-type');
             const hpMaxElement = hpTable ? hpTable.querySelector('tr:nth-child(6) td.LBC:nth-child(1) div.A b') : null;
             const hpMax = parseInt(hpMaxElement ? hpMaxElement.textContent.trim() : '') || 1; 
 
-            // HP現在値:
             const hpCurrentElement = hpTable ? hpTable.querySelector('tr:nth-child(6) td.LBC:nth-child(2) div.A b') : null;
             const hpCurrent = parseInt(hpCurrentElement ? hpCurrentElement.textContent.trim() : '') || hpMax;
 
-            if (name === '無名キャラクター' && ac === 10) {
+            if (name.includes('無名キャラクター') && ac === 10) {
                  throw new Error("データ抽出に失敗しました。URLが正しいか、ページ構造が変わっていないか確認してください。");
             }
-
 
             return { name, ac, initiative, hp_max: hpMax, hp_current: hpCurrent, pb };
 
@@ -109,7 +98,12 @@
         }
     }
 
+    /**
+     * 抽出したデータからココフォリアJSONを生成します。
+     * ... (generateKokoforiaJsonData関数の中身は変更なし) ...
+     */
     function generateKokoforiaJsonData(data) {
+        // ... (前の回答で提供した内容と同一) ...
         const { name, initiative, hp_current, hp_max, ac, pb } = data;
 
         const kokoforiaData = {
@@ -141,6 +135,7 @@
         return JSON.stringify(kokoforiaData, null, 2);
     }
     
+    // 🚨 この関数がボタンから呼ばれるメイン処理です
     async function fetchSheetAndGenerateJson() {
         const sheetUrl = document.getElementById('sheet_url').value;
         const statusMessage = document.getElementById('status-message');
@@ -201,6 +196,7 @@
         statusMessage.style.display = 'block';
     }
 
+    // 🚨 コピー関数はそのまま
     function copyJson() {
         const jsonOutput = document.getElementById('jsonOutput');
         const copyButton = document.getElementById('copyButton');
@@ -225,6 +221,15 @@
             copyButton.textContent = 'JSONをコピー';
         }, 3000);
     }
+    
+    // ⭐️ 修正点: DOMContentLoadedでイベントリスナーを設定
+    document.addEventListener('DOMContentLoaded', () => {
+        const generateButton = document.getElementById('generateButton');
+        // ボタンがクリックされたら fetchSheetAndGenerateJson 関数を実行する
+        if (generateButton) {
+            generateButton.addEventListener('click', fetchSheetAndGenerateJson);
+        }
+    });
 </script>
 
 </body>
