@@ -66,7 +66,8 @@
 
         try {
             // セレクタは添付ファイル (OUTPUT.php.txt) の構造を基に構築
-            const name = extractText('table.DD5ePage tr:nth-child(2) td:nth-child(2) div.B b', '無名キャラクター');
+            const nameElement = doc.querySelector('table.DD5ePage tr:nth-child(3) td:nth-child(1) div.B b');
+            const name = nameElement ? nameElement.textContent.trim().replace(/　/g, '').replace(/[\n\r]/g, '') : '無名キャラクター';
             
             const acText = extractText('table[summary="ＡＣ"] tr.LWC td:nth-child(1) div.A b');
             const ac = parseInt(acText) || 10;
